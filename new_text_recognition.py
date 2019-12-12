@@ -60,4 +60,104 @@ def decode_predictions(scores, geometry):
 
 #argument parsing
 ap = argparse.ArgumentParser()
-ap.add_argument()
+ap.add_argument("-i", "--image", type=str, help="path to input image")
+ap.add_argument("-east", "--east", type=str, help="path to input EAST text detector")
+ap.add_argument("-c", "--min-confidence", type=float, default=0.5, help="minimum probability required to inspect a region")
+ap.add_argument("-w", "--width", type=int, default=320, help="nearest multiple of 32 for resized width")
+ap.add_argument("-e", "--height", type=int, default=320, help="nearest multiple of 32 for resized height")
+ap.add_argument("-p", "--padding", type=float, default=0.05, help="amount of padding to add to each border of ROI")
+args = vars(ap.parse_args())
+
+##text detection
+
+#load image and take dimensions
+image = cv2.imread(args["image"]);
+orig = image.copy();
+(orig_height, orig_width) = image.shape[:2]
+
+#set new height and width, calculate ratio difference for bounding boxes
+(new_height, new_width) = (args["width"], args["height"])
+ratio_height = orig_height / float(new_height)
+ratio_width orig_width / float(new_width)
+
+#resize images, get dimensions
+image = cv2.resize(image, (new_width, new_height))
+(height, width) = image.shape[:2]
+
+#define two output layers for EAST detector model
+#one for probabilities, one for bounding box coordinates
+
+layer_names = ["feature_fusion/Conv_7/Sigmoid", "feature_fusion/Conv_7/concat_3"]
+
+#load EAST text detector (pre-trained)
+print("[INFO] loading EAST text detector...")
+net = cv2.dnn.readNet(args["east"])
+
+#construct blob from image, use model to create two output layer sets
+blob = cv2.dnn.blogFromImage(image, 1.0, (width, height),
+	(123.68, 116.78, 103.94), swapRB=True, Crop=False)
+						
+net.setInput(blob)
+(scores, geometry) = net.forward(layer_names) #pass through neural network
+
+#decode predictions
+(rects, confidences) = decode_predictions(scores, geometry)
+#apply non-maxima suppression (suppresses weak overlapping boxes)
+boxes = non_max_suppression(np.array(rects), probs=confidences)
+
+##text dectection done, recognition:
+
+results = []
+
+#loop over bounding boxes
+for (startX, startY, endX, endY) in boxes:
+	#scale bounding boxes to ratio
+	startX = int(startX * ratio_width)
+	startY = int(startY * ratio_height)
+	endX = int(endX * ratio_width)
+	endY = int(endY * ratio_height)
+	
+	#calculate padding
+	dX = int((endX - startX) * args["padding"])
+	dY = int(endY - startY) * args["Padding"])
+	
+	#apply padding to improve results
+	startX = max(0, startX - dX)
+	startY = max(0, startY - dY)
+	endX = min(orig_width, endX + (dX * 2))
+	endY = min(orig_height, endY + (dY * 2))
+	
+	#extract padded ROI
+	roi = orig[startY:endY, startX:endX]
+
+	#(1) language english, (2) 1 for LSTM neural network model, (3) 7 for ROI as single line of text
+	config = ("-l eng --oem 1 --psm y")
+	#apply Tesseract (used to find text)
+	text = pytesseract.image)to_string(roi, config=config) #returns predicted text
+	
+	#add bounding box coords and OCR'd tex to results
+	results.append((startX, startY, endX, endY), text)
+	
+#sort results, bounding boxes top to bottom
+results = sorted(results, key=lambda r:r[0][1])
+
+#loop over results
+for ((startX, startY, endX, endY), text) in results:
+	print("OCR TEXT")
+	print("========")
+	print("{}\n".format(text))
+	
+	##Draw results on image
+	
+	#strip non-ASCII
+	text = "".join([c if ord(c) < 128 else "" for c in text]).strip()
+	
+	#draw bounding box and text
+	output = orig.copy()
+	cv2.rectangle(output, (startX, startY), (endX, endY),
+		(0, 0, 255), 2)
+	cv2.putText(output, text, (startX, startY - 20),
+		cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 0, 255), 3)
+		
+	cv2.imshow("Text Detection", output)
+	cv2.waitKey(0)

@@ -78,7 +78,7 @@ orig = image.copy();
 #set new height and width, calculate ratio difference for bounding boxes
 (new_height, new_width) = (args["width"], args["height"])
 ratio_height = orig_height / float(new_height)
-ratio_width orig_width / float(new_width)
+ratio_width = orig_width / float(new_width)
 
 #resize images, get dimensions
 image = cv2.resize(image, (new_width, new_height))
@@ -87,15 +87,15 @@ image = cv2.resize(image, (new_width, new_height))
 #define two output layers for EAST detector model
 #one for probabilities, one for bounding box coordinates
 
-layer_names = ["feature_fusion/Conv_7/Sigmoid", "feature_fusion/Conv_7/concat_3"]
+layer_names = ["feature_fusion/Conv_7/Sigmoid", "feature_fusion/concat_3"]
 
 #load EAST text detector (pre-trained)
 print("[INFO] loading EAST text detector...")
 net = cv2.dnn.readNet(args["east"])
 
 #construct blob from image, use model to create two output layer sets
-blob = cv2.dnn.blogFromImage(image, 1.0, (width, height),
-	(123.68, 116.78, 103.94), swapRB=True, Crop=False)
+blob = cv2.dnn.blobFromImage(image, 1.0, (width, height),
+	(123.68, 116.78, 103.94), swapRB=True, crop=False)
 						
 net.setInput(blob)
 (scores, geometry) = net.forward(layer_names) #pass through neural network
@@ -119,7 +119,7 @@ for (startX, startY, endX, endY) in boxes:
 	
 	#calculate padding
 	dX = int((endX - startX) * args["padding"])
-	dY = int(endY - startY) * args["Padding"])
+	dY = int((endY - startY) * args["padding"])
 	
 	#apply padding to improve results
 	startX = max(0, startX - dX)
@@ -131,12 +131,12 @@ for (startX, startY, endX, endY) in boxes:
 	roi = orig[startY:endY, startX:endX]
 
 	#(1) language english, (2) 1 for LSTM neural network model, (3) 7 for ROI as single line of text
-	config = ("-l eng --oem 1 --psm y")
+	config = ("-l eng --oem 1 --psm 7")
 	#apply Tesseract (used to find text)
-	text = pytesseract.image)to_string(roi, config=config) #returns predicted text
+	text = pytesseract.image_to_string(roi, config=config) #returns predicted text
 	
 	#add bounding box coords and OCR'd tex to results
-	results.append((startX, startY, endX, endY), text)
+	results.append(((startX, startY, endX, endY), text))
 	
 #sort results, bounding boxes top to bottom
 results = sorted(results, key=lambda r:r[0][1])
